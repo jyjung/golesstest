@@ -50,6 +50,8 @@ def test1():
 
 
 
+
+
 def make_gen(sleep_time: float):
     def _inner():
         nonlocal sleep_time
@@ -110,7 +112,7 @@ def pipeline(index):
 def main1():
     start = time.time()
     tlist =[]
-    for i in range(5):
+    for i in range(1000):
         t =Thread(target=pipeline, args=(i,))
         t.daemon = False
         t.start()
