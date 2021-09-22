@@ -6,6 +6,8 @@ import uuid
 import time
 from datetime import datetime
 import gevent
+from threading import Thread
+from queue import Queue
 from expiringdict import ExpiringDict
 
 cache_dict = ExpiringDict(max_len=1000, max_age_seconds=10)
@@ -21,22 +23,21 @@ async def fake_file_upload(filename: str):
     return 
     
 
-def fake_begin_mip()-> str:
+def fake_file_encoding_start()-> str:
     id = str(uuid.uuid4())
     cache_dict[id] = time.time()
     return id
 
-def fake_mip_status( id: str)-> bool:
+def fake_file_encoding_status( id: str)-> bool:
     if id in cache_dict  and  time.time() - cache_dict[id] > 2:
         return True
     else:
         return False
 
-
-async def sync_test_work(filename: str):
-    id = fake_begin_mip()
+async def wait_until_complete(filename: str):
+    id = fake_file_encoding_start()
     for i in range(20):
-        if fake_mip_status(id):
+        if fake_file_encoding_status(id):
             return True
         await asyncio.sleep(0.5)
     return False
@@ -44,49 +45,89 @@ async def sync_test_work(filename: str):
 async def step1_filedownload(in_queue:asyncio.Queue, out_queue:asyncio.Queue):
     while True:
         filename = await in_queue.get()
+        print('step1',filename)
         temp_file_name = await fake_file_download()
         in_queue.task_done()
-        out_queue.put(temp_file_name)
+        print('before outque',filename)
+        await out_queue.put(temp_file_name)
 
 
-async def step2_mip(in_queue:asyncio.Queue , out_queue:asyncio.Queue):
+async def step2_file_encoding(in_queue:asyncio.Queue , out_queue:asyncio.Queue):
     while True:
         filename = await in_queue.get()
+        print('step2',filename)        
         # process the token received from a producer
-        work_result = await sync_test_work(filename)
+        work_result = await wait_until_complete(filename)
         in_queue.task_done()
         if work_result:
-            out_queue.put(filename)
-            print(f'consumed {filename}')
+            await out_queue.put(filename)
  
 async def step3_fileupload(in_queue:asyncio.Queue ):
     while True:
         filename = await in_queue.get()
-        temp_file_name = await fake_file_upload()
+        print('step3',filename)
+        await fake_file_upload()
         in_queue.task_done()
  
  
-async def main():
-    queue = asyncio.Queue()
- 
+async def pipe(fd_in_queue: asyncio.Queue):
+    fd_out_ec_in_queue = asyncio.Queue()
+    ec_out_fu_in_queue = asyncio.Queue()
     # fire up the both producers and consumers
-    producers = [asyncio.create_task(producer(queue))
-                 for _ in range(3)]
-    consumers = [asyncio.create_task(consumer(queue))
-                 for _ in range(10)]
+    step1_functions = [asyncio.create_task(step1_filedownload(fd_in_queue,fd_out_ec_in_queue))
+                 for _ in range(2)]
+    step2_functions = [asyncio.create_task(step2_file_encoding(fd_out_ec_in_queue,ec_out_fu_in_queue))
+                 for _ in range(5)]
+    step3_functions = [asyncio.create_task(step3_fileupload(ec_out_fu_in_queue))
+                 for _ in range(2)]
+    print('step3 funcitons task end')
+    await asyncio.gather(*step1_functions)
+    print('end pipe')
+    
+def pipewrap(queue: Queue):
+    fd_in = asyncio.Queue()
+    t =Thread(target=asyncio.run, args=(pipe(fd_in),))
+    t.daemon = False
+    t.start()
+    while True:
+        filename = queue.get()
+        print('get file',filename)
+        asyncio.run(fd_in.put(filename))
+        
 
 
-async def main():
-    tasks = [
-        sync_test_work(),
-        sync_test_work(),
-    ]
+def main():
+    start = time.time()
+    tlist =[]
+    fd_in = Queue()
+    for i in range(1):
+        t =Thread(target=pipewrap, args=(fd_in,))
+        t.daemon = False
+        t.start()
+        tlist.append(t)
 
-    while len(tasks):
-        done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        for task in done:
-            print(task, task.result())
+    fd_in.put('first_file')
+    time.sleep(5)        
+    fd_in.put('second_file')
+    
+    for t in tlist:
+        t.join()
+    print(time.time()-start)
+
+async def main2():
+    start = time.time()
+    tlist =[]
+    fd_in = asyncio.Queue()
+    await fd_in.put('first file')
+    await fd_in.put('second file')
+    await pipe(fd_in)
+
+    print(time.time()-start)
 
 
-asyncio.run(main())
+if __name__ == '__main__':
+    #asyncio.run(main2())
+    main()
+    
+
 
