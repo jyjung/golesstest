@@ -68,6 +68,7 @@ def pipe(queue:Queue):
             print('step1 before send ')
             step2.send(mydict)
             print('step1 send complete')
+            
         print('step1 end')
 
     def step2_file_encoding():
@@ -179,16 +180,16 @@ def main():
     tlist =[]
     fd_in = Queue()
 
-    for i in range(3):
+    for i in range(1):
         t =Thread(target=pipe, args=(fd_in,))
         t.daemon = False
         t.start()
         tlist.append(t)
 
     fd_in.put('first1_file')
-    gevent.sleep(4)        
+    gevent.sleep(1)        
     fd_in.put('first2_file')    
-    gevent.sleep(4)        
+    gevent.sleep(1)        
     fd_in.put('first3_file')        
     # gevent.sleep(2)        
     # fd_in.put('second_file')
@@ -210,7 +211,7 @@ def main2():
     print(time.time()-start)
     
 if __name__ == '__main__':
-    main2()
+    main()
     
 
 
