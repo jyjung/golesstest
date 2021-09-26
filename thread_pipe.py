@@ -41,13 +41,31 @@ def fake_file_encoding_status( id: str)-> bool:
     else:
         return False
 
+def base_step(ps : PipeStore, enum):
+    store = ps.get_store(enum)
+    next_store = ps.get_next_store(enum)    
+    while store.loop():
+        item = store.get_one(blocking=True,timeout=1)
+        print(enum.name,str(item))
+        # item에다가 새로운 자료를 담는다. 
+        time.sleep(1)
+        if next_store:
+            next_store.add(item)
+    if next_store:            
+        next_store.stop_loop()
+
+
+
 def file_download_step(ps : PipeStore):
     store = ps.get_store(ExecOrder.FILE_DOWNLOAD)
     next_store = ps.get_next_store(ExecOrder.FILE_DOWNLOAD)    
     while store.loop():
-        inlist = store.get_all(blocking=True,timeout=1)
-        for item in inlist:
-            print('download_item',str(item))
+        item = store.get_one(blocking=True,timeout=1)
+        print('download_item',str(item))
+        time.sleep(1)
+        next_store.add(item)
+    next_store.stop_loop()
+    
 
     
 

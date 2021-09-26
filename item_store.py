@@ -1,6 +1,6 @@
 import threading
 import signal
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, Union
 from enum import Enum, IntEnum , auto
 
 class WorkingItem:
@@ -72,10 +72,12 @@ class PipeStore:
             raise ValueError
         return self.stores[idx]
 
-    def get_next_store(self, enum_item) -> ItemStore:
+    def get_next_store(self, enum_item) -> Union[ItemStore,None]:
         idx = self.idxmap[enum_item.name]
         next_idx = idx +1 
-        if not 0 <= next_idx < self.len:
+        if next_idx >= self.len:
+            return None
+        elif not 0 <= next_idx < self.len:
             raise ValueError
         return self.stores[next_idx]
 
@@ -105,4 +107,5 @@ def main2():
     print(l2)
     
 if __name__ == '__main__':
-    main2()
+    aaa = 1
+
