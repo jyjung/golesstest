@@ -28,6 +28,10 @@ class ItemStore(object):
         with self.cond:
             return len(self.items)
 
+    def is_loop(self):
+        with self.lock:
+            return self.flag
+
     def loop(self):
         with self.lock:
             return self.flag
@@ -98,7 +102,7 @@ class PipeLine:
         store = self.get_store(idx)
         next_store = self.get_next_store(idx)    
         store.inc()
-        while store.loop():
+        while store.is_loop():
             item = store.get_one(blocking=True,timeout=1)
             if item:
                 next_item = function(item)
