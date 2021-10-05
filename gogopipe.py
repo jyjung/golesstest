@@ -78,6 +78,8 @@ class PipeLine:
 
     def add(self, item):
         self.stores[0].add(item)
+    def is_loop(self):
+        return self.loop_flag
     def loop(self):
         return self.loop_flag
 
@@ -90,7 +92,6 @@ class PipeLine:
         for t in self.libero_list:
             t.join()
         print('end libero')
-
 
 
     def loop_runner(self, idx , function):
@@ -156,8 +157,6 @@ class PipeLine:
                 time.sleep(0.5)
             else:
                 self.once_runner(idx,self.tasks[idx])
-   
-
     
     def run(self):
         LIBERO_COUNT = 5

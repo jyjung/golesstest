@@ -43,8 +43,8 @@ def file_encoding(filename: str) -> str:
 def file_upload(filename : str) -> bool :
     current_func_name = sys._getframe().f_code.co_name
     # print(current_func_name, filename)
-
     return True
+
 
 def main():
     my_pipe = [
@@ -62,7 +62,7 @@ def main():
         file = "file_" + str(i)
         pl.add(file)
 
-    while pl.loop():
+    while pl.is_loop():
         time.sleep(1)
 
 
