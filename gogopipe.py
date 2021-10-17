@@ -1,8 +1,22 @@
 import threading
 import time
 import signal
-from typing import List, Tuple, Dict, Optional, Union
+from typing import List, Tuple, Dict, Optional, Union, Callable
 from enum import Enum, IntEnum , auto
+
+def split(tag: str , func) -> Tuple:
+    info = {
+        'type': 'split',
+        'tag': tag
+    }
+    return (info , func)
+
+def merge(tag: str , func) -> Tuple:
+    info = {
+        'type': 'merge',
+        'tag': tag
+    }
+    return (info , func)
 
 
 class ItemStore(object):
@@ -64,6 +78,12 @@ class ItemStore(object):
             items, self.items = self.items, []
         return items
 
+def get_function_name( pipe_item: Union[tuple,Callable]) -> str:
+    if isinstance(pipe_item, tuple):
+        return pipe_item[1].__name__
+    else:
+        return pipe_item.__name__
+
 
 class PipeLine:
     def __init__(self, tasks) -> None:
@@ -74,10 +94,10 @@ class PipeLine:
         self.stores= []
         self.tasks = tasks
         self.thread_list = []
-        self.libero_list = []
+        self.extra_thread_list = []
         self.loop_flag = True
         for idx , task  in  enumerate(tasks):
-            self.stores.append(ItemStore(task.__name__))
+            self.stores.append(ItemStore(get_function_name(task)))
         self.monitor()
 
     def add(self, item):
@@ -93,25 +113,64 @@ class PipeLine:
         for t in self.thread_list:
             t.join()
         self.loop_flag = False
-        for t in self.libero_list:
+        for t in self.extra_thread_list:
             t.join()
-        print('end libero')
+        print('end extra thread')
 
-
-    def loop_runner(self, idx , function):
+    def base_runner(self, idx, cbfunction):
         store = self.get_store(idx)
         next_store = self.get_next_store(idx)    
         store.inc()
         while store.is_loop():
+            cbfunction(store, next_store)
+        store.dec()
+        if next_store  and  store.store_count() == 0:     
+            next_store.stop_loop()
+        print(store.name, "exit")
+
+
+    def one_to_one_runner(self, idx , function):
+        def _inner(store, next_store):
             item = store.get_one(blocking=True,timeout=1)
             if item:
                 next_item = function(item)
                 if next_store:
                     next_store.add(next_item)
-        store.dec()
-        if next_store  and  store.store_count() == 0:     
-            next_store.stop_loop()
-        print(store.name, "exit")
+        self.base_runner(idx,_inner)
+
+    def one_to_split_runner(self, idx , function ,tag):
+        def _inner(store, next_store):
+            item = store.get_one(blocking=True,timeout=1)
+            if item:
+                next_items = function(item)
+                if next_store:
+                    for item in next_items:
+                        next_store.add(item)
+        self.base_runner(idx,_inner)
+
+    def merge_to_one_runner(self, idx , function , tag):
+        def _inner(store, next_store):
+            item = store.get_one(blocking=True,timeout=1)
+            if item:
+                next_item = function(item)
+                if next_store:
+                    next_store.add(next_item)
+        self.base_runner(idx,_inner)
+
+
+        # store = self.get_store(idx)
+        # next_store = self.get_next_store(idx)    
+        # store.inc()
+        # while store.is_loop():
+        #     item = store.get_one(blocking=True,timeout=1)
+        #     if item:
+        #         next_item = function(item)
+        #         if next_store:
+        #             next_store.add(next_item)
+        # store.dec()
+        # if next_store  and  store.store_count() == 0:     
+        #     next_store.stop_loop()
+        # print(store.name, "exit")
 
     def once_runner(self, idx , function):
         store = self.get_store(idx)
@@ -121,7 +180,7 @@ class PipeLine:
             next_item = function(item)
             if next_store:
                 next_store.add(next_item)
-        print(store.name,'!!!!!!!!!libero  do  this ')
+        print(store.name,'<--- Extra Thread  do  this task')
 
 
     def get_store(self, idx) -> ItemStore:
@@ -148,7 +207,7 @@ class PipeLine:
         t.daemon = True
         t.start()
 
-    def run_libero(self): 
+    def run_extra_thread(self): 
         def get_busy_store(): 
             for idx, store in enumerate(self.stores):
                 if store.item_count() > 1:
@@ -163,19 +222,22 @@ class PipeLine:
                 self.once_runner(idx,self.tasks[idx])
     
     def run(self):
-        LIBERO_COUNT = 5
+        EXTRA_THREAD_COUNT = 5
         for idx , task  in enumerate(self.tasks):
-            t = threading.Thread(target=self.loop_runner , args=(idx,task,))
-            #t.daemon = True
+            if isinstance(task, tuple):
+                if task[0]['type'] == "split":
+                    t = threading.Thread(target=self.one_to_split_runner, args =(idx,task[1],task[0]['tag'],))
+                elif task[0]['type'] == "merge":
+                    t = threading.Thread(target=self.merge_to_one_runner, args =(idx,task[1],task[0]['tag'],))
+            else:
+                t = threading.Thread(target=self.one_to_one_runner , args=(idx,task,))
             t.start()
             self.thread_list.append(t)
 
-        for i in range(LIBERO_COUNT): 
-            t = threading.Thread(target=self.run_libero)
+        for i in range(EXTRA_THREAD_COUNT): 
+            t = threading.Thread(target=self.run_extra_thread)
             t.start()
-            self.libero_list.append(t)
-
-
+            self.extra_thread_list.append(t)
     
 if __name__ == '__main__':
     aaa = 1
