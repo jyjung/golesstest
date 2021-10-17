@@ -4,16 +4,19 @@ import signal
 from typing import List, Tuple, Dict, Optional, Union, Callable
 from enum import Enum, IntEnum , auto
 
+SPLIT_TYPE = 'split'
+MERGE_TYPE = 'merge'
+
 def split(tag: str , func) -> Tuple:
     info = {
-        'type': 'split',
+        'type': SPLIT_TYPE,
         'tag': tag
     }
     return (info , func)
 
 def merge(tag: str , func) -> Tuple:
     info = {
-        'type': 'merge',
+        'type': MERGE_TYPE,
         'tag': tag
     }
     return (info , func)
@@ -225,9 +228,9 @@ class PipeLine:
         EXTRA_THREAD_COUNT = 5
         for idx , task  in enumerate(self.tasks):
             if isinstance(task, tuple):
-                if task[0]['type'] == "split":
+                if task[0]['type'] == SPLIT_TYPE:
                     t = threading.Thread(target=self.one_to_split_runner, args =(idx,task[1],task[0]['tag'],))
-                elif task[0]['type'] == "merge":
+                elif task[0]['type'] == MERGE_TYPE:
                     t = threading.Thread(target=self.merge_to_one_runner, args =(idx,task[1],task[0]['tag'],))
             else:
                 t = threading.Thread(target=self.one_to_one_runner , args=(idx,task,))
