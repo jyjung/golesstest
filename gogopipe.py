@@ -1,24 +1,27 @@
 import threading
 import time
 import signal
-from typing import List, Tuple, Dict, Optional, Union, Callable
+import uuid
+from typing import List, Tuple, Dict, Optional, Union, Callable, Any
 from enum import Enum, IntEnum , auto
 
 SPLIT_TYPE = 'split'
 MERGE_TYPE = 'merge'
 
-def split(tag: str , func) -> Tuple:
+def split(func , **kwargs) -> Tuple[Dict, Callable]:
     info = {
-        'type': SPLIT_TYPE,
-        'tag': tag
+        '_type': SPLIT_TYPE,
     }
+    for key, value in kwargs.items():
+        info[key] = value
     return (info , func)
 
-def merge(tag: str , func) -> Tuple:
+def merge(func, **kwargs) -> Tuple[Dict, Callable]:
     info = {
-        'type': MERGE_TYPE,
-        'tag': tag
+        '_type': MERGE_TYPE,
     }
+    for key, value in kwargs.items():
+        info[key] = value
     return (info , func)
 
 
@@ -61,7 +64,7 @@ class ItemStore(object):
             self.items.append(item)
             self.cond.notify() # Wake 1 thread waiting on cond (if any)
 
-    def get_one(self, blocking=False , timeout=None ):
+    def get_one(self, blocking=False , timeout=None ) -> Tuple[Dict,Any]:
         with self.cond:
             while blocking and len(self.items) == 0:
                 b = self.cond.wait(timeout)
@@ -104,7 +107,10 @@ class PipeLine:
         self.monitor()
 
     def add(self, item):
-        self.stores[0].add(item)
+        tag = {
+            'id': str(uuid.uuid4())
+        }
+        self.stores[0].add((tag, item))
     def is_loop(self):
         return self.loop_flag
     def loop(self):
@@ -135,20 +141,28 @@ class PipeLine:
     def one_to_one_runner(self, idx , function):
         def _inner(store, next_store):
             item = store.get_one(blocking=True,timeout=1)
+            
             if item:
-                next_item = function(item)
+                next_item = function(item[1])
                 if next_store:
-                    next_store.add(next_item)
+                    next_store.add((item[0], next_item))
         self.base_runner(idx,_inner)
 
     def one_to_split_runner(self, idx , function ,tag):
         def _inner(store, next_store):
             item = store.get_one(blocking=True,timeout=1)
             if item:
-                next_items = function(item)
+                next_items = function(item[1])
+                items_count = len(next_items)
                 if next_store:
-                    for item in next_items:
-                        next_store.add(item)
+                    for idx,item in enumerate(next_items):
+                        tag = {
+                            '_count': items_count,
+                            '_idx' : idx
+                        }
+                        #todo  item[0] Dict 와 머지후에 next store로 넘겨준다.  
+
+                        next_store.add((item)
         self.base_runner(idx,_inner)
 
     def merge_to_one_runner(self, idx , function , tag):
@@ -178,11 +192,11 @@ class PipeLine:
     def once_runner(self, idx , function):
         store = self.get_store(idx)
         next_store = self.get_next_store(idx)    
-        item = store.get_one(blocking=True,timeout=1)
-        if item:
-            next_item = function(item)
+        tuple_item = store.get_one(blocking=True,timeout=1)
+        if tuple_item:
+            next_item = function(tuple_item[1])
             if next_store:
-                next_store.add(next_item)
+                next_store.add((tuple_item[0],next_item))
         print(store.name,'<--- Extra Thread  do  this task')
 
 
@@ -228,9 +242,9 @@ class PipeLine:
         EXTRA_THREAD_COUNT = 5
         for idx , task  in enumerate(self.tasks):
             if isinstance(task, tuple):
-                if task[0]['type'] == SPLIT_TYPE:
+                if task[0]['_type'] == SPLIT_TYPE:
                     t = threading.Thread(target=self.one_to_split_runner, args =(idx,task[1],task[0]['tag'],))
-                elif task[0]['type'] == MERGE_TYPE:
+                elif task[0]['_type'] == MERGE_TYPE:
                     t = threading.Thread(target=self.merge_to_one_runner, args =(idx,task[1],task[0]['tag'],))
             else:
                 t = threading.Thread(target=self.one_to_one_runner , args=(idx,task,))
