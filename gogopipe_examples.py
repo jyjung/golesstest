@@ -58,7 +58,7 @@ def main():
     pl = PipeLine(my_pipe)
     pl.run()
     print('haha')
-    for i in range(10):
+    for i in range(30):
         file = "file_" + str(i)
         pl.add(file)
 
