@@ -16,16 +16,17 @@ import logging
 logging.basicConfig(level=logging.DEBUG)
 
 
-def fake_unzip_file(filenmae: str):
-    return ['aaaa.docx', 'bbbb.docx', 'ccccc.docx']
+def fake_unzip_file(filename: str):
+    return [ filename[:-4] + v for v in ["aaa","bbb","ccc"] ]
+    
 
 def fake_sanitize_file(filename: str):
     time.sleep(1)
-    logging.debug('sanitize: ' + filename)
+    #logging.debug('sanitize: ' + filename)
     return filename
 
 def file_unzip(filename: str) -> list : 
-    logging.debug('unzip: ' + filename)
+    #logging.debug('unzip: ' + filename)
     time.sleep(1)
     mylist = fake_unzip_file(filename)
     #작업을 나누고 다시 합치는 부분을 구현한다.  
@@ -37,37 +38,28 @@ def file_zip(filelist: list) -> bool :
     time.sleep(1) 
     return "aaa.zip"
 
-
+def file_after(filename: str) -> bool :
+    return "hhhhh.zip"
 
 def main():
     my_pipe = [
         split(file_unzip),
         fake_sanitize_file, 
-        merge(file_zip)
+        merge(file_zip),
+        file_after
  
     ]
 
     pl = PipeLine(my_pipe)
     pl.run()
-    print('haha')
-    for i in range(1):
-        file = "file_" + str(i)
+    for i in range(3):
+        file = "file_" + str(i)+ ".zip"
         pl.add(file)
 
     while pl.loop():
         time.sleep(1)
 
-def get_function_name( tuple_of_func):
-    if isinstance(tuple_of_func, tuple):
-        return tuple_of_func[1].__name__
-    else:
-        return tuple_of_func.__name__
 
-def test():
-    a = ("dfwefwe",file_zip)
-    print(get_function_name(a))
-    print(get_function_name(file_zip))
-    print(get_function_name(file_unzip))
  
 
 if __name__ == '__main__':

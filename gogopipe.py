@@ -4,10 +4,11 @@ import signal
 import uuid
 from typing import List, Tuple, Dict, Optional, Union, Callable, Any
 from enum import Enum, IntEnum , auto
+from expiringdict import ExpiringDict
 
 SPLIT_TYPE = 'split'
 MERGE_TYPE = 'merge'
-
+NORMAL_TYPE = 'normal'
 def split(func , **kwargs) -> Tuple[Dict, Callable]:
     info = {
         '_type': SPLIT_TYPE,
@@ -26,10 +27,13 @@ def merge(func, **kwargs) -> Tuple[Dict, Callable]:
 
 
 class ItemStore(object):
-    def __init__(self, name: str):
-        self.name = name
+    def __init__(self, task_type: str , task_name: str):
+        self.type = task_type
+        self.name = task_name
         self.cond = threading.Condition()
         self.lock = threading.Lock()
+        if task_type == MERGE_TYPE:
+            self.cache = ExpiringDict(max_len=1000, max_age_seconds=600)
         self.items = []
         self.flag = True
         self.counter =0
@@ -59,10 +63,25 @@ class ItemStore(object):
         with self.lock:
             self.flag = False
 
-    def add(self, item):
+    def add_merged(self,item: Tuple[Dict, Any]):
+        id = item[0]['id']
+        count = item[0]['_count']
         with self.cond:
-            self.items.append(item)
-            self.cond.notify() # Wake 1 thread waiting on cond (if any)
+            if id in self.cache:
+                self.cache[id].append(item[1])
+            else:
+                self.cache[id] = [item[1]]
+            if count == len(self.cache[id]):
+                self.items.append((item[0], self.cache.pop(id,None)))
+                self.cond.notify()
+
+    def add(self, item: Tuple[Dict , Any]):
+        if self.type == MERGE_TYPE:
+            self.add_merged(item)
+        else:
+            with self.cond:
+                self.items.append(item)
+                self.cond.notify() # Wake 1 thread waiting on cond (if any)
 
     def get_one(self, blocking=False , timeout=None ) -> Tuple[Dict,Any]:
         with self.cond:
@@ -84,11 +103,18 @@ class ItemStore(object):
             items, self.items = self.items, []
         return items
 
-def get_function_name( pipe_item: Union[tuple,Callable]) -> str:
+def get_function_info( pipe_item: Union[tuple,Callable]) -> Tuple[str , str]:
     if isinstance(pipe_item, tuple):
-        return pipe_item[1].__name__
+        return pipe_item[0]['_type'],pipe_item[1].__name__
     else:
-        return pipe_item.__name__
+        return NORMAL_TYPE, pipe_item.__name__
+
+def get_function( pipe_item: Union[tuple,Callable]) -> Callable:
+    if isinstance(pipe_item, tuple):
+        return pipe_item[1]
+    else:
+        return pipe_item
+
 
 
 class PipeLine:
@@ -103,7 +129,8 @@ class PipeLine:
         self.extra_thread_list = []
         self.loop_flag = True
         for idx , task  in  enumerate(tasks):
-            self.stores.append(ItemStore(get_function_name(task)))
+            task_type, task_name = get_function_info(task)
+            self.stores.append(ItemStore(task_type, task_name))
         self.monitor()
 
     def add(self, item):
@@ -171,9 +198,9 @@ class PipeLine:
         def _inner(store, next_store):
             item = store.get_one(blocking=True,timeout=1)
             if item:
-                next_item = function(item)
+                next_item = function(item[1])
                 if next_store:
-                    next_store.add(next_item)
+                    next_store.add((item[0] , next_item[1]))
         self.base_runner(idx,_inner)
 
 
@@ -191,10 +218,12 @@ class PipeLine:
         #     next_store.stop_loop()
         # print(store.name, "exit")
 
-    def once_runner(self, idx , function):
+    def once_runner(self, idx , pipe_item: Union[Tuple, Callable]):
         store = self.get_store(idx)
         next_store = self.get_next_store(idx)    
         tuple_item = store.get_one(blocking=True,timeout=1)
+        function = get_function(pipe_item)
+        print(str(idx),function.__name__,str(tuple_item))
         if tuple_item:
             next_item = function(tuple_item[1])
             if next_store:
@@ -227,9 +256,15 @@ class PipeLine:
         t.start()
 
     def run_extra_thread(self): 
+        def is_normal_task(idx):
+            if isinstance(self.tasks[idx], tuple):
+                return False
+            else:
+                return True
+
         def get_busy_store(): 
             for idx, store in enumerate(self.stores):
-                if store.item_count() > 1:
+                if store.item_count() > 1  and is_normal_task(idx):
                     return True,idx
             return False,0
 
