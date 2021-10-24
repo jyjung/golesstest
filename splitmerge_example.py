@@ -12,36 +12,45 @@ from item_store import ItemStore , WorkingItem , PipeStore
 from gogopipe import PipeLine , split , merge
 from typing import Any 
 import functools
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
 
 def fake_unzip_file(filenmae: str):
     return ['aaaa.docx', 'bbbb.docx', 'ccccc.docx']
 
 def fake_sanitize_file(filename: str):
+    time.sleep(1)
+    logging.debug('sanitize: ' + filename)
     return filename
 
 def file_unzip(filename: str) -> list : 
+    logging.debug('unzip: ' + filename)
+    time.sleep(1)
     mylist = fake_unzip_file(filename)
     #작업을 나누고 다시 합치는 부분을 구현한다.  
     return mylist
 
-def file_zip(filelist: list) -> bool : 
+def file_zip(filelist: list) -> bool :
+    logging.debug('zip!!!: ' + str(filelist))
+
+    time.sleep(1) 
     return "aaa.zip"
 
 
 
 def main():
     my_pipe = [
-        split("zip",file_unzip),
+        split(file_unzip),
         fake_sanitize_file, 
-        merge("zip",file_zip)
+        merge(file_zip)
  
     ]
 
     pl = PipeLine(my_pipe)
     pl.run()
     print('haha')
-    for i in range(2):
+    for i in range(1):
         file = "file_" + str(i)
         pl.add(file)
 

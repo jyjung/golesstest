@@ -107,10 +107,10 @@ class PipeLine:
         self.monitor()
 
     def add(self, item):
-        tag = {
+        iteminfo = {
             'id': str(uuid.uuid4())
         }
-        self.stores[0].add((tag, item))
+        self.stores[0].add((iteminfo, item))
     def is_loop(self):
         return self.loop_flag
     def loop(self):
@@ -148,24 +148,26 @@ class PipeLine:
                     next_store.add((item[0], next_item))
         self.base_runner(idx,_inner)
 
-    def one_to_split_runner(self, idx , function ,tag):
+    def one_to_split_runner(self, idx , function, taskinfo):
         def _inner(store, next_store):
             item = store.get_one(blocking=True,timeout=1)
             if item:
+                # one to split 이 적용되는 task는 항상 enurable 을 리턴해야 한다.  검사 로직 추가?? 
                 next_items = function(item[1])
                 items_count = len(next_items)
                 if next_store:
-                    for idx,item in enumerate(next_items):
+                    for idx,iteritem in enumerate(next_items):
                         tag = {
                             '_count': items_count,
                             '_idx' : idx
                         }
+                        tag.update(item[0])
                         #todo  item[0] Dict 와 머지후에 next store로 넘겨준다.  
 
-                        next_store.add((item)
+                        next_store.add((tag,iteritem))
         self.base_runner(idx,_inner)
 
-    def merge_to_one_runner(self, idx , function , tag):
+    def merge_to_one_runner(self, idx , function, taskinfo):
         def _inner(store, next_store):
             item = store.get_one(blocking=True,timeout=1)
             if item:
@@ -243,9 +245,11 @@ class PipeLine:
         for idx , task  in enumerate(self.tasks):
             if isinstance(task, tuple):
                 if task[0]['_type'] == SPLIT_TYPE:
-                    t = threading.Thread(target=self.one_to_split_runner, args =(idx,task[1],task[0]['tag'],))
+                    print('split task0',task[0])
+                    t = threading.Thread(target=self.one_to_split_runner, args =(idx,task[1],task[0],))
                 elif task[0]['_type'] == MERGE_TYPE:
-                    t = threading.Thread(target=self.merge_to_one_runner, args =(idx,task[1],task[0]['tag'],))
+                    print('task0',task[0])
+                    t = threading.Thread(target=self.merge_to_one_runner, args =(idx,task[1],task[0],))
             else:
                 t = threading.Thread(target=self.one_to_one_runner , args=(idx,task,))
             t.start()
