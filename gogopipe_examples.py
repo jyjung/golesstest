@@ -11,7 +11,8 @@ from typing import Union
 from item_store import ItemStore , WorkingItem , PipeStore
 from gogopipe import PipeLine
 from typing import Any 
-
+import signal
+import logging
 
 def file_download( filename: str) -> str:
     current_func_name = sys._getframe().f_code.co_name
@@ -45,9 +46,9 @@ def file_upload(filename : str) -> bool :
     # print(current_func_name, filename)
     return True
 
-
 def main():
-    my_pipe = [
+    logging.basicConfig(level=logging.DEBUG)
+    file_task_pipe = [
         file_download,
         file_sanitize,
         file_resize,
@@ -55,18 +56,23 @@ def main():
         file_upload
     ]
 
-    pl = PipeLine(my_pipe)
+    pl = PipeLine(file_task_pipe)
     pl.run()
-    print('haha')
+    logging.debug("start")
+
+    def signal_exit(signum, frame):
+        logging.info('main exit')
+        pl.safe_exit(signum, frame)
+    
+    signal.signal(signal.SIGINT,signal_exit)        
+    signal.signal(signal.SIGTERM,signal_exit)
+
     for i in range(100):
         file = "file_" + str(i)
         pl.add(file)
 
     while pl.is_loop():
         time.sleep(1)
-
-
-
 
 if __name__ == '__main__':
     main()

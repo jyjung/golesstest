@@ -21,13 +21,13 @@ def fake_unzip_file(filename: str):
     
 
 def fake_sanitize_file(filename: str):
-    time.sleep(1)
+    time.sleep(3)
     #logging.debug('sanitize: ' + filename)
     return filename
 
 def file_unzip(filename: str) -> list : 
     #logging.debug('unzip: ' + filename)
-    time.sleep(1)
+    time.sleep(0.5)
     mylist = fake_unzip_file(filename)
     #작업을 나누고 다시 합치는 부분을 구현한다.  
     return mylist
@@ -52,7 +52,7 @@ def main():
 
     pl = PipeLine(my_pipe)
     pl.run()
-    for i in range(3):
+    for i in range(300):
         file = "file_" + str(i)+ ".zip"
         pl.add(file)
 

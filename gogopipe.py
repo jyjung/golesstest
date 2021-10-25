@@ -5,13 +5,18 @@ import uuid
 from typing import List, Tuple, Dict, Optional, Union, Callable, Any
 from enum import Enum, IntEnum , auto
 from expiringdict import ExpiringDict
+import logging
 
 SPLIT_TYPE = 'split'
 MERGE_TYPE = 'merge'
 NORMAL_TYPE = 'normal'
+TYPE_KEY = '_type_'
+ID_KEY = '_id_'
+COUNT_KEY = '_count_'
+
 def split(func , **kwargs) -> Tuple[Dict, Callable]:
     info = {
-        '_type': SPLIT_TYPE,
+        TYPE_KEY: SPLIT_TYPE,
     }
     for key, value in kwargs.items():
         info[key] = value
@@ -19,7 +24,7 @@ def split(func , **kwargs) -> Tuple[Dict, Callable]:
 
 def merge(func, **kwargs) -> Tuple[Dict, Callable]:
     info = {
-        '_type': MERGE_TYPE,
+        TYPE_KEY: MERGE_TYPE,
     }
     for key, value in kwargs.items():
         info[key] = value
@@ -64,8 +69,8 @@ class ItemStore(object):
             self.flag = False
 
     def add_merged(self,item: Tuple[Dict, Any]):
-        id = item[0]['id']
-        count = item[0]['_count']
+        id = item[0][ID_KEY]
+        count = item[0][COUNT_KEY]
         with self.cond:
             if id in self.cache:
                 self.cache[id].append(item[1])
@@ -105,7 +110,7 @@ class ItemStore(object):
 
 def get_function_info( pipe_item: Union[tuple,Callable]) -> Tuple[str , str]:
     if isinstance(pipe_item, tuple):
-        return pipe_item[0]['_type'],pipe_item[1].__name__
+        return pipe_item[0][TYPE_KEY],pipe_item[1].__name__
     else:
         return NORMAL_TYPE, pipe_item.__name__
 
@@ -135,7 +140,7 @@ class PipeLine:
 
     def add(self, item):
         iteminfo = {
-            'id': str(uuid.uuid4())
+            ID_KEY: str(uuid.uuid4())
         }
         self.stores[0].add((iteminfo, item))
     def is_loop(self):
@@ -144,14 +149,15 @@ class PipeLine:
         return self.loop_flag
 
     def safe_exit(self, signum, frame):
-        print('safe_exit')
+        logging.debug('[pipe line] safe_exit start')
         self.stores[0].stop_loop()
+        logging.debug('[pipe line] safe_exit stop loop')        
         for t in self.thread_list:
             t.join()
         self.loop_flag = False
         for t in self.extra_thread_list:
             t.join()
-        print('end extra thread')
+        logging.debug('extra thread end')
 
     def base_runner(self, idx, cbfunction):
         store = self.get_store(idx)
@@ -162,7 +168,7 @@ class PipeLine:
         store.dec()
         if next_store  and  store.store_count() == 0:     
             next_store.stop_loop()
-        print(store.name, "exit")
+        logging.debug(store.name + "exit")
 
 
     def one_to_one_runner(self, idx , function):
@@ -179,18 +185,15 @@ class PipeLine:
         def _inner(store, next_store):
             item = store.get_one(blocking=True,timeout=1)
             if item:
-                # one to split 이 적용되는 task는 항상 enurable 을 리턴해야 한다.  검사 로직 추가?? 
                 next_items = function(item[1])
                 items_count = len(next_items)
                 if next_store:
                     for idx,iteritem in enumerate(next_items):
                         tag = {
-                            '_count': items_count,
+                            COUNT_KEY: items_count,
                             '_idx' : idx
                         }
                         tag.update(item[0])
-                        #todo  item[0] Dict 와 머지후에 next store로 넘겨준다.  
-
                         next_store.add((tag,iteritem))
         self.base_runner(idx,_inner)
 
@@ -203,32 +206,16 @@ class PipeLine:
                     next_store.add((item[0] , next_item[1]))
         self.base_runner(idx,_inner)
 
-
-        # store = self.get_store(idx)
-        # next_store = self.get_next_store(idx)    
-        # store.inc()
-        # while store.is_loop():
-        #     item = store.get_one(blocking=True,timeout=1)
-        #     if item:
-        #         next_item = function(item)
-        #         if next_store:
-        #             next_store.add(next_item)
-        # store.dec()
-        # if next_store  and  store.store_count() == 0:     
-        #     next_store.stop_loop()
-        # print(store.name, "exit")
-
     def once_runner(self, idx , pipe_item: Union[Tuple, Callable]):
         store = self.get_store(idx)
         next_store = self.get_next_store(idx)    
         tuple_item = store.get_one(blocking=True,timeout=1)
         function = get_function(pipe_item)
-        print(str(idx),function.__name__,str(tuple_item))
         if tuple_item:
             next_item = function(tuple_item[1])
             if next_store:
                 next_store.add((tuple_item[0],next_item))
-        print(store.name,'<--- Extra Thread  do  this task')
+        logging.debug( str(store.name) + '<--- Extra Thread  do  this task')
 
 
     def get_store(self, idx) -> ItemStore:
@@ -279,11 +266,9 @@ class PipeLine:
         EXTRA_THREAD_COUNT = 5
         for idx , task  in enumerate(self.tasks):
             if isinstance(task, tuple):
-                if task[0]['_type'] == SPLIT_TYPE:
-                    print('split task0',task[0])
+                if task[0][TYPE_KEY] == SPLIT_TYPE:
                     t = threading.Thread(target=self.one_to_split_runner, args =(idx,task[1],task[0],))
-                elif task[0]['_type'] == MERGE_TYPE:
-                    print('task0',task[0])
+                elif task[0][TYPE_KEY] == MERGE_TYPE:
                     t = threading.Thread(target=self.merge_to_one_runner, args =(idx,task[1],task[0],))
             else:
                 t = threading.Thread(target=self.one_to_one_runner , args=(idx,task,))
